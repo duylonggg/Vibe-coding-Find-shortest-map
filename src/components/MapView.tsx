@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, CircleMarker, Polyline, useMapEvents, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, useMapEvents, useMap } from 'react-leaflet';
+import { ExploredCanvasLayer } from './ExploredCanvasLayer';
 import L from 'leaflet';
 import type { LatLng } from '../Algorithm/types';
 
@@ -105,14 +106,7 @@ const MapView: React.FC<MapViewProps> = ({
         <Marker position={[endPos.lat, endPos.lng]} icon={redIcon} />
       )}
 
-      {exploredPositions.map((pos, i) => (
-        <CircleMarker
-          key={`exp-${i}`}
-          center={[pos.lat, pos.lng]}
-          radius={4}
-          pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.5, weight: 1 }}
-        />
-      ))}
+      <ExploredCanvasLayer positions={exploredPositions} />
 
       {pathPositions.length > 1 && (
         <Polyline
