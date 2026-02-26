@@ -86,27 +86,29 @@ const ShortestPath: React.FC = () => {
     setMapZoom(12);
   };
 
+  // Memoize graph separately so it's only rebuilt when start/end change
+  const graph = useMemo(
+    () => (startPos && endPos ? buildGraph(startPos, endPos, 20) : null),
+    [startPos, endPos]
+  );
+
   // Compute displayed explored positions up to currentStep
   const exploredPositions = useMemo<LatLng[]>(() => {
-    if (!result) return [];
-    const graph = startPos && endPos ? buildGraph(startPos, endPos, 20) : null;
-    if (!graph) return [];
+    if (!result || !graph) return [];
     return result.exploredOrder
       .slice(0, currentStep + 1)
       .map((id) => graph.nodes.get(id)?.position)
       .filter((p): p is LatLng => p !== undefined);
-  }, [result, currentStep, startPos, endPos]);
+  }, [result, currentStep, graph]);
 
   // Show path only when slider is at the last step
   const pathPositions = useMemo<LatLng[]>(() => {
-    if (!result || result.path.length === 0) return [];
+    if (!result || result.path.length === 0 || !graph) return [];
     if (currentStep < result.exploredOrder.length - 1) return [];
-    const graph = startPos && endPos ? buildGraph(startPos, endPos, 20) : null;
-    if (!graph) return [];
     return result.path
       .map((id) => graph.nodes.get(id)?.position)
       .filter((p): p is LatLng => p !== undefined);
-  }, [result, currentStep, startPos, endPos]);
+  }, [result, currentStep, graph]);
 
   const steps = result ? result.exploredOrder.length : 0;
 
