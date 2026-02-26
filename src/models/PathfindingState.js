@@ -2,6 +2,10 @@ import AStar from "./algorithms/AStar";
 import BidirectionalSearch from "./algorithms/BidirectionalSearch";
 import Dijkstra from "./algorithms/Dijkstra";
 import Greedy from "./algorithms/Greedy";
+import Bfs from "./algorithms/Bfs";
+import Alt from "./algorithms/Alt";
+import Ch from "./algorithms/Ch";
+import Cch from "./algorithms/Cch";
 import PathfindingAlgorithm from "./algorithms/PathfindingAlgorithm";
 
 export default class PathfindingState {
@@ -64,6 +68,18 @@ export default class PathfindingState {
                 break;
             case "bidirectional":
                 this.algorithm = new BidirectionalSearch();
+                break;
+            case "bfs":
+                this.algorithm = new Bfs();
+                break;
+            case "alt":
+                this.algorithm = new Alt();
+                break;
+            case "ch":
+                this.algorithm = new Ch();
+                break;
+            case "cch":
+                this.algorithm = new Cch();
                 break;
             default:
                 this.algorithm = new AStar();
