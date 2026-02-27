@@ -10,6 +10,8 @@ export type AlgorithmType =
   | 'ch'
   | 'cch';
 
+export type LoadMode = 'radius' | 'corridor';
+
 /** Maximum allowed bounding-box span in degrees (~222 km at equator). */
 const MAX_BOX_DEGREES = 2.0;
 /** Approximate km per degree of latitude (used for display only). */
@@ -37,6 +39,8 @@ function isOutOfRadius(start: LatLng, end: LatLng): boolean {
 interface SidebarProps {
   algorithm: AlgorithmType;
   onAlgorithmChange: (alg: AlgorithmType) => void;
+  loadMode: LoadMode;
+  onLoadModeChange: (mode: LoadMode) => void;
   onRun: () => void;
   onClear: () => void;
   canRun: boolean;
@@ -57,6 +61,11 @@ const algorithms: { value: AlgorithmType; label: string; description: string }[]
   { value: 'alt',             label: 'ALT (A* + Landmarks)',            description: 'A* with Landmarks & Triangle Inequality – tighter lower bounds than plain A*' },
   { value: 'ch',              label: 'Contraction Hierarchies (CH)',    description: 'Preprocesses node importance; fast bidirectional Dijkstra on contracted graph' },
   { value: 'cch',             label: 'Customizable CH (CCH)',           description: 'Topology-only preprocessing + fast metric customization; ideal for dynamic weights' },
+];
+
+const loadModes: { value: LoadMode; label: string; description: string }[] = [
+  { value: 'radius',   label: 'Radius',   description: 'Loads the full rectangular area between start and end (max ~222 km)' },
+  { value: 'corridor', label: 'Corridor', description: 'Loads only a narrow strip along the direct line – supports much longer distances' },
 ];
 
 /** Geocode a place name via Nominatim and return the first result's lat/lng. */
@@ -169,6 +178,8 @@ function LocationInput({
 const Sidebar: React.FC<SidebarProps> = ({
   algorithm,
   onAlgorithmChange,
+  loadMode,
+  onLoadModeChange,
   onRun,
   onClear,
   canRun,
@@ -188,10 +199,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   const statusBg = isDark ? '#0f172a' : '#f3f4f6';
   const inputBg = isDark ? '#0f172a' : '#ffffff';
 
-  // Check if end point is outside the allowed radius from start point
+  // Check if end point is outside the allowed radius from start point (radius mode only)
   const radiusWarning =
-    startPos && endPos && isOutOfRadius(startPos, endPos)
-      ? `⚠️ End point is too far from start (~${Math.round(haversineKm(startPos, endPos))} km). Please choose points within ~${Math.round(MAX_BOX_DEGREES * KM_PER_DEGREE)} km.`
+    loadMode === 'radius' && startPos && endPos && isOutOfRadius(startPos, endPos)
+      ? `⚠️ End point is too far from start (~${Math.round(haversineKm(startPos, endPos))} km). Please choose points within ~${Math.round(MAX_BOX_DEGREES * KM_PER_DEGREE)} km, or switch to Corridor mode.`
       : null;
 
   return (
@@ -259,6 +270,31 @@ const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
       )}
+
+      <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: textPrimary, transition: 'color 0.4s ease' }}>
+        Load Mode
+      </h3>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {loadModes.map(({ value, label, description }) => (
+          <label key={value} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 14, color: textSecondary, transition: 'color 0.4s ease' }}>
+            <input
+              type="radio"
+              name="loadMode"
+              value={value}
+              checked={loadMode === value}
+              onChange={() => onLoadModeChange(value)}
+              style={{ accentColor: '#2563eb', marginTop: 3, flexShrink: 0 }}
+            />
+            <span>
+              <span style={{ fontWeight: loadMode === value ? 700 : 400 }}>{label}</span>
+              {loadMode === value && (
+                <span style={{ display: 'block', fontSize: 11, color: textMuted, marginTop: 1, transition: 'color 0.4s ease' }}>{description}</span>
+              )}
+            </span>
+          </label>
+        ))}
+      </div>
 
       <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: textPrimary, transition: 'color 0.4s ease' }}>
         Algorithm

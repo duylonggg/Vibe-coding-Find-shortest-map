@@ -276,6 +276,151 @@ async function _fetchAndCacheGraph(
   return { graph, index };
 }
 
+// ── Corridor width constants ─────────────────────────────────────────────────
+
+/** Corridor half-width (metres) for long routes (> 100 km straight-line). */
+const CORRIDOR_WIDTH_LONG_M  = 5000;
+/** Corridor half-width (metres) for medium routes (20–100 km). */
+const CORRIDOR_WIDTH_MED_M   = 3000;
+/** Corridor half-width (metres) for short routes (< 20 km). */
+const CORRIDOR_WIDTH_SHORT_M = 1500;
+/** Distance threshold (km) between short and medium corridor widths. */
+const CORRIDOR_THRESH_SHORT_KM = 20;
+/** Distance threshold (km) between medium and long corridor widths. */
+const CORRIDOR_THRESH_LONG_KM  = 100;
+
+// ── Shared graph-building helper ─────────────────────────────────────────────
+
+/**
+ * Parse an OverpassResponse into a Graph + SpatialGrid without caching.
+ * Shared between the bbox and corridor fetch paths.
+ */
+function _parseOverpassResponse(
+  data: OverpassResponse,
+  noDataError: string
+): { graph: Graph; index: SpatialGrid } {
+  const osmNodes = new Map<number, OsmNode>();
+  const osmWays: OsmWay[] = [];
+
+  for (const el of data.elements) {
+    if (el.type === 'node') {
+      osmNodes.set(el.id, el as OsmNode);
+    } else if (el.type === 'way') {
+      osmWays.push(el as OsmWay);
+    }
+  }
+
+  if (osmNodes.size === 0 || osmWays.length === 0) {
+    throw new Error(noDataError);
+  }
+
+  const usedNodeIds = new Set<number>();
+  for (const way of osmWays) {
+    for (const nid of way.nodes) usedNodeIds.add(nid);
+  }
+
+  const nodes = new Map<string, GraphNode>();
+  for (const nid of usedNodeIds) {
+    const n = osmNodes.get(nid);
+    if (!n) continue;
+    const id = String(nid);
+    nodes.set(id, { id, position: { lat: n.lat, lng: n.lon }, neighbors: [] });
+  }
+
+  const edgeSet = new Set<string>();
+  for (const way of osmWays) {
+    const oneWay =
+      way.tags?.oneway === 'yes' ||
+      way.tags?.oneway === '1' ||
+      way.tags?.junction === 'roundabout';
+
+    for (let i = 0; i < way.nodes.length - 1; i++) {
+      const aId = String(way.nodes[i]);
+      const bId = String(way.nodes[i + 1]);
+      const a = nodes.get(aId);
+      const b = nodes.get(bId);
+      if (!a || !b) continue;
+
+      const weight = haversine(a.position, b.position);
+
+      const keyAB = `${aId}→${bId}`;
+      if (!edgeSet.has(keyAB)) {
+        edgeSet.add(keyAB);
+        a.neighbors.push({ nodeId: bId, weight });
+      }
+      if (!oneWay) {
+        const keyBA = `${bId}→${aId}`;
+        if (!edgeSet.has(keyBA)) {
+          edgeSet.add(keyBA);
+          b.neighbors.push({ nodeId: aId, weight });
+        }
+      }
+    }
+  }
+
+  const graph: Graph = { nodes, startId: '', endId: '' };
+  const index = new SpatialGrid();
+  for (const [id, node] of nodes) {
+    index.add(id, node.position.lat, node.position.lng);
+  }
+  return { graph, index };
+}
+
+/**
+ * Fetch road data along a corridor (Overpass `around` polyline) between start
+ * and end, then build and return a ready-to-use Graph.
+ *
+ * Unlike the bounding-box approach, this works for long-distance routes because
+ * it only loads roads within a narrow strip around the direct line, rather than
+ * filling an entire rectangular area.
+ */
+export async function buildOsmGraphCorridor(start: LatLng, end: LatLng): Promise<Graph> {
+  const latSpan = Math.abs(end.lat - start.lat) || 0.01;
+  const lngSpan = Math.abs(end.lng - start.lng) || 0.01;
+  const roadPattern = getRoadTypePattern(latSpan, lngSpan);
+  const timeout = getOverpassTimeout(latSpan, lngSpan);
+
+  // Corridor half-width scales with distance to allow realistic detours.
+  const distKm = haversine(start, end);
+  const corridorMeters =
+    distKm > CORRIDOR_THRESH_LONG_KM  ? CORRIDOR_WIDTH_LONG_M  :
+    distKm > CORRIDOR_THRESH_SHORT_KM ? CORRIDOR_WIDTH_MED_M   :
+                                        CORRIDOR_WIDTH_SHORT_M;
+
+  const query =
+    `[out:json][timeout:${timeout}];` +
+    `(way[highway~"^(${roadPattern})$"]` +
+    `(around:${corridorMeters},${start.lat},${start.lng},${end.lat},${end.lng}););` +
+    `(._;>;);out body;`;
+
+  const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+
+  // Benefit from any already-in-progress prefetch before firing the main request
+  if (_prefetchPromise) {
+    await _prefetchPromise.catch(() => {});
+  }
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Overpass API error: ${response.status} ${response.statusText}`);
+  }
+  const data: OverpassResponse = await response.json();
+
+  const { graph, index } = _parseOverpassResponse(
+    data,
+    'No road data found along the corridor. Try choosing different points or switching to Radius mode.'
+  );
+
+  const startId = index.nearestId(start.lat, start.lng, graph.nodes);
+  const endId   = index.nearestId(end.lat,   end.lng,   graph.nodes);
+
+  if (!startId || !endId) {
+    throw new Error('Could not snap start or end point to any road node. Try placing markers closer to a road.');
+  }
+
+  return { nodes: graph.nodes, startId, endId };
+}
+
 /**
  * Fetch the road network from OpenStreetMap via the Overpass API and build
  * a Graph that can be consumed by the existing algorithm implementations.
