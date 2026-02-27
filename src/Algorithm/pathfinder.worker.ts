@@ -54,11 +54,13 @@ ctx.onmessage = async (e: MessageEvent<InMessage>) => {
         default:                 res = aStar(graph);
       }
 
-      // Serialize only node positions – the full neighbor graph stays in the
-      // worker, keeping large data structures out of React state.
+      // Serialize only the node positions needed for rendering – nodes in
+      // exploredOrder and path – keeping the full graph out of React state.
+      const neededIds = new Set([...res.exploredOrder, ...res.path]);
       const nodePositions: Record<string, LatLng> = {};
-      for (const [id, node] of graph.nodes) {
-        nodePositions[id] = node.position;
+      for (const id of neededIds) {
+        const node = graph.nodes.get(id);
+        if (node) nodePositions[id] = node.position;
       }
 
       ctx.postMessage({ type: 'result', exploredOrder: res.exploredOrder, path: res.path, nodePositions });
