@@ -19,10 +19,33 @@ interface OverpassResponse {
   elements: Array<OsmNode | OsmWay>;
 }
 
-const OVERPASS_TIMEOUT_SECONDS = 30;
+/** Maximum allowed bounding-box span (degrees). ~2° ≈ 220 km. */
+const MAX_BOX_DEGREES = 2.0;
 
-/** Maximum allowed bounding-box span (degrees) to keep queries fast. */
-const MAX_BOX_DEGREES = 0.5;
+/**
+ * Choose the Overpass highway filter based on the size of the requested area.
+ * Larger areas use only major roads to keep the response payload manageable.
+ */
+function getRoadTypePattern(latSpan: number, lngSpan: number): string {
+  const maxSpan = Math.max(latSpan, lngSpan);
+  if (maxSpan > 1.5) {
+    // Very large area (~170 km+): major roads only
+    return 'motorway|trunk|primary|motorway_link|trunk_link|primary_link';
+  } else if (maxSpan > 0.5) {
+    // Medium area: major + secondary roads
+    return 'motorway|trunk|primary|secondary|motorway_link|trunk_link|primary_link|secondary_link';
+  }
+  // Small area: all navigable road types
+  return 'motorway|trunk|primary|secondary|tertiary|unclassified|residential|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link|living_street|service';
+}
+
+/** Timeout (s) scales with the requested area to avoid premature Overpass rejections. */
+function getOverpassTimeout(latSpan: number, lngSpan: number): number {
+  const maxSpan = Math.max(latSpan, lngSpan);
+  if (maxSpan > 1.5) return 90;
+  if (maxSpan > 0.5) return 60;
+  return 30;
+}
 
 // ── In-memory graph cache ────────────────────────────────────────────────────
 interface CacheEntry {
@@ -89,12 +112,18 @@ async function _fetchAndCacheGraph(
   south: number,
   north: number,
   west: number,
-  east: number
+  east: number,
+  latSpan?: number,
+  lngSpan?: number
 ): Promise<Graph> {
-  // Only fetch major navigable roads to reduce payload size
+  const effectiveLatSpan = latSpan ?? north - south;
+  const effectiveLngSpan = lngSpan ?? east - west;
+  const roadPattern = getRoadTypePattern(effectiveLatSpan, effectiveLngSpan);
+  const timeout = getOverpassTimeout(effectiveLatSpan, effectiveLngSpan);
+  // Only fetch the road types appropriate for this area size
   const query =
-    `[out:json][timeout:${OVERPASS_TIMEOUT_SECONDS}];` +
-    `(way[highway~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link|living_street|service)$"]` +
+    `[out:json][timeout:${timeout}];` +
+    `(way[highway~"^(${roadPattern})$"]` +
     `(${south.toFixed(6)},${west.toFixed(6)},${north.toFixed(6)},${east.toFixed(6)}););(._;>;);out body;`;
 
   const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
@@ -136,6 +165,9 @@ async function _fetchAndCacheGraph(
     nodes.set(id, { id, position: { lat: n.lat, lng: n.lon }, neighbors: [] });
   }
 
+  // Track added edges in a Set to avoid O(degree) duplicate scans per insertion
+  const edgeSet = new Set<string>();
+
   // Connect consecutive nodes along each way
   for (const way of osmWays) {
     const oneWay =
@@ -152,11 +184,17 @@ async function _fetchAndCacheGraph(
 
       const weight = haversine(a.position, b.position);
 
-      if (!a.neighbors.some((nb) => nb.nodeId === bId)) {
+      const keyAB = `${aId}→${bId}`;
+      if (!edgeSet.has(keyAB)) {
+        edgeSet.add(keyAB);
         a.neighbors.push({ nodeId: bId, weight });
       }
-      if (!oneWay && !b.neighbors.some((nb) => nb.nodeId === aId)) {
-        b.neighbors.push({ nodeId: aId, weight });
+      if (!oneWay) {
+        const keyBA = `${bId}→${aId}`;
+        if (!edgeSet.has(keyBA)) {
+          edgeSet.add(keyBA);
+          b.neighbors.push({ nodeId: aId, weight });
+        }
       }
     }
   }
@@ -207,21 +245,36 @@ export async function buildOsmGraph(start: LatLng, end: LatLng): Promise<Graph> 
   if (cached) {
     graphNodes = cached.nodes;
   } else {
-    const fetched = await _fetchAndCacheGraph(south, north, west, east);
+    const fetched = await _fetchAndCacheGraph(south, north, west, east, latSpan, lngSpan);
     graphNodes = fetched.nodes;
   }
 
-  // Snap start and end to the nearest road node
+  // Snap start and end to the nearest road node.
+  // Use squared Euclidean distance on lat/lng for comparison – it is much
+  // faster than haversine (no trig) and preserves the relative ordering
+  // needed to find the nearest node.
   let startId = '';
   let endId = '';
   let minDistStart = Infinity;
   let minDistEnd = Infinity;
 
   for (const [id, node] of graphNodes) {
-    const ds = haversine(node.position, start);
-    const de = haversine(node.position, end);
-    if (ds < minDistStart) { minDistStart = ds; startId = id; }
-    if (de < minDistEnd)   { minDistEnd = de;   endId = id; }
+    const dLatS = node.position.lat - start.lat;
+    const dLngS = node.position.lng - start.lng;
+    const ds = dLatS * dLatS + dLngS * dLngS;
+
+    const dLatE = node.position.lat - end.lat;
+    const dLngE = node.position.lng - end.lng;
+    const de = dLatE * dLatE + dLngE * dLngE;
+
+    if (ds < minDistStart) {
+      minDistStart = ds;
+      startId = id;
+    }
+    if (de < minDistEnd) {
+      minDistEnd = de;
+      endId = id;
+    }
   }
 
   if (!startId || !endId) {
