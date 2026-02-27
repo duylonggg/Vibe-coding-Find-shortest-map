@@ -300,6 +300,10 @@ const Interface = forwardRef(({ canStart, started, animationEnded, playbackOn, t
                             <MenuItem value="dijkstra">Dijkstra</MenuItem>
                             <MenuItem value="greedy">Greedy Best-First</MenuItem>
                             <MenuItem value="bidirectional">Bidirectional Search</MenuItem>
+                            <MenuItem value="bfs">BFS (Breadth-First Search)</MenuItem>
+                            <MenuItem value="alt">ALT (A* + Landmarks)</MenuItem>
+                            <MenuItem value="ch">Contraction Hierarchies (CH)</MenuItem>
+                            <MenuItem value="cch">Customizable CH (CCH)</MenuItem>
                         </Select>
                     </FormControl>
 
