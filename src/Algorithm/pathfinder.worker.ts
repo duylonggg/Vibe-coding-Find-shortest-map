@@ -1,4 +1,4 @@
-import { buildOsmGraph, prefetchAreaAround } from './osmGraphBuilder';
+import { buildOsmGraph, buildOsmGraphCorridor, prefetchAreaAround } from './osmGraphBuilder';
 import type { LatLng, AlgorithmResult } from './types';
 import { bfs } from './bfs';
 import { dijkstra } from './dijkstra';
@@ -17,7 +17,7 @@ interface WorkerContext {
 
 type InMessage =
   | { type: 'prefetch'; center: LatLng }
-  | { type: 'run'; start: LatLng; end: LatLng; algorithm: string };
+  | { type: 'run'; start: LatLng; end: LatLng; algorithm: string; loadMode?: 'radius' | 'corridor' };
 
 type OutMessage =
   | { type: 'status'; message: string }
@@ -35,11 +35,13 @@ ctx.onmessage = async (e: MessageEvent<InMessage>) => {
   }
 
   if (msg.type === 'run') {
-    const { start, end, algorithm } = msg;
+    const { start, end, algorithm, loadMode } = msg;
     try {
       ctx.postMessage({ type: 'status', message: 'Loading road network…' });
 
-      const graph = await buildOsmGraph(start, end);
+      const graph = loadMode === 'corridor'
+        ? await buildOsmGraphCorridor(start, end)
+        : await buildOsmGraph(start, end);
       ctx.postMessage({ type: 'status', message: `Road network loaded (${graph.nodes.size} nodes). Running algorithm…` });
 
       let res: AlgorithmResult;

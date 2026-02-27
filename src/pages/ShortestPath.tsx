@@ -21,6 +21,7 @@ const ShortestPath: React.FC = () => {
   const [startPos, setStartPos] = useState<LatLng | null>(null);
   const [endPos, setEndPos] = useState<LatLng | null>(null);
   const [algorithm, setAlgorithm] = useState<AlgorithmType>('aStar');
+  const [loadMode, setLoadMode] = useState<'radius' | 'corridor'>('radius');
   const [result, setResult] = useState<AlgorithmResult | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [mapCenter, setMapCenter] = useState<LatLng>(DEFAULT_CENTER);
@@ -106,13 +107,20 @@ const ShortestPath: React.FC = () => {
     }
   }, [startPos]);
 
+  // Pre-fetch a small area around the end marker as well.
+  useEffect(() => {
+    if (endPos && workerRef.current) {
+      workerRef.current.postMessage({ type: 'prefetch', center: endPos });
+    }
+  }, [endPos]);
+
   const handleRun = () => {
     if (!startPos || !endPos || !workerRef.current) return;
     setIsLoading(true);
     setResult(null);
     setNodePositions({});
     setCurrentStep(0);
-    workerRef.current.postMessage({ type: 'run', start: startPos, end: endPos, algorithm });
+    workerRef.current.postMessage({ type: 'run', start: startPos, end: endPos, algorithm, loadMode });
   };
 
   const handleClear = () => {
@@ -172,6 +180,8 @@ const ShortestPath: React.FC = () => {
       <Sidebar
         algorithm={algorithm}
         onAlgorithmChange={setAlgorithm}
+        loadMode={loadMode}
+        onLoadModeChange={setLoadMode}
         onRun={handleRun}
         onClear={handleClear}
         canRun={!!startPos && !!endPos}
