@@ -13,7 +13,7 @@
 |---|---|---|---|---|
 | 1 | #1 | Xây dựng ứng dụng ShortestPath cơ bản | ✅ Merged | 70% |
 | 2 | #2–3 | Thay grid ảo bằng đường đi thực (OSM) | ✅ Merged | 80% |
-| 3 | #4 | Clone hiệu ứng honzaap/Pathfinding + bản đồ trắng | ✅ Merged | 85% |
+| 3 | #4 | Clone hiệu ứng Pathfinding + bản đồ trắng | ✅ Merged | 85% |
 | 4 | #5 | Sửa lỗi dependency sass-embedded | ✅ Merged | 100% |
 | 5 | #6 | Sửa lỗi JSX/MUI/DeckGL broken files | ⚠️ Không merge | 70% |
 | 6 | #7 | Tối ưu tốc độ load bản đồ (lần 1) | ✅ Merged | 85% |
@@ -121,7 +121,7 @@
 **Ngày:** 2026-02-26  
 
 **Input (Prompt của bạn):**
-> Clone honzaap/Pathfinding animated visualization với chủ đề bản đồ trắng/sáng
+> Clone Pathfinding animated visualization với chủ đề bản đồ trắng/sáng
 
 **Output (Kết quả Copilot):**
 - Thay Leaflet → **DeckGL + MapLibre** với tile style **CARTO Positron** (bản đồ trắng)
